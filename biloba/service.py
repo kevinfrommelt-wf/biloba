@@ -1,6 +1,6 @@
 import functools
 import gevent
-from gevent import event, pool
+from gevent import pool
 import logbook
 
 from . import config as biloba_config, events
@@ -38,7 +38,6 @@ class Service(events.EventEmitter):
         'pool',
         'logger',
         '_run_thread',
-        '_kill',
     )
 
     # set to specify the logger name (before the first access)
@@ -52,7 +51,6 @@ class Service(events.EventEmitter):
         self.pool = pool.Group()
         self.logger = logger or self.get_logger()
         self._run_thread = None
-        self._kill = event.Event()
 
     def get_logger(self):
         return logbook.Logger(self.logger_name or self.__class__.__name__)
@@ -96,8 +94,7 @@ class Service(events.EventEmitter):
                 with self.emit_exceptions(propagate=False):
                     try:
                         self.start_service()
-
-                        self._kill.wait()
+                        self.pool.join()
                     finally:
                         self.stop_service()
 
@@ -119,13 +116,11 @@ class Service(events.EventEmitter):
         @self.once('error')
         def on_error(*exc_info):
             self.remove_listener('start', on_start)
-
             result.set(exc_info)
 
         @self.once('start')
         def on_start():
             self.remove_listener('error', on_error)
-
             result.set()
 
         exc_info = result.get()
@@ -143,7 +138,7 @@ class Service(events.EventEmitter):
         if not self.started:
             return
 
-        self._kill.set()
+        self.pool.kill(block=False)
 
         if block:
             try:
@@ -160,7 +155,6 @@ class Service(events.EventEmitter):
 
         for child in self.services:
             child.start(block=True)
-
             self.spawn(self.watch_service, child)
 
         self.started = True
@@ -169,7 +163,6 @@ class Service(events.EventEmitter):
             self.emit('start')
         except:
             self.stop()
-
             raise
 
     def stop_service(self):
