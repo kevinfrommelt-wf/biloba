@@ -282,7 +282,7 @@ class Service(events.EventEmitter):
         try:
             child.join()
         finally:
-            self.stop()
+            gevent.spawn(self.stop)
 
 
 class ConfigurableService(Service):
